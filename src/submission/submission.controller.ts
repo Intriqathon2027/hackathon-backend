@@ -27,6 +27,7 @@ export class SubmissionController {
   }
 
   @Get()
+  @Roles(Role.ORGANIZER, Role.JURY, Role.MENTOR)
   async findAll(): Promise<SubmissionDetailedResponseDto[]> {
     return this.submissionService.getAllSubmissions();
   }
