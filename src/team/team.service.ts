@@ -164,10 +164,8 @@ export class TeamService {
       return { subjectId, teams };
     });
 
-    // On attend que TOUS les scripts Python terminent
     const results = await Promise.all(matchmakingTasks);
 
-    // 3. Traitement des résultats et création en base de données
     let numberOfTeamsCreated = 0;
 
     for (const result of results) {
@@ -175,22 +173,20 @@ export class TeamService {
 
       const { subjectId, teams } = result;
       const themeId = this.getThemeId(themeSettings, subjectId);
-      const subjectName = this.getSubjectName(themeSettings, subjectId);
 
-      for (let i = 0; i < teams.length; i++) {
-        const mmTeam = teams[i];
-        const teamName = `${subjectName}_${i + 1}`;
+      for (const mmTeam of teams) {
+        numberOfTeamsCreated++;
+        const teamName = `Team_${numberOfTeamsCreated}`;
 
         const createTeamDTO: CreateTeamDTO = {
           name: teamName,
-          description: `Auto-generated team for subject ${subjectName}`,
+          description: `Auto-generated team for subject ${subjectId}`,
           subjectId: subjectId,
           themeId: themeId,
           memberIds: mmTeam.members.map((m) => m.user_id),
         };
 
         await this.create(createTeamDTO, supabaseUserId);
-        numberOfTeamsCreated++;
       }
     }
 
