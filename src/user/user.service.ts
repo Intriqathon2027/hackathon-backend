@@ -10,13 +10,17 @@ import { UpdateUserDto } from "./dto/update-user.dto";
 import { PrismaService } from "../prisma/prisma.service";
 import { UUID } from "crypto";
 import { UserResponse } from "./dto/user-response";
-import { Role } from "@prisma/client";
+import { HackathonConfigKey, Role } from "@prisma/client";
 import { createClient } from "@supabase/supabase-js";
 import { UserResponseReduced } from "./dto/user-response-reduced";
 import { ExpertTeamsResponse } from "./dto/expert-teams-response";
 import { MailerService } from "../mailer/mailer.service";
 import { ResetPasswordDto } from "./dto/reset-password.dto";
 import { S3BucketService } from "../s3-bucket/s3-bucket.service";
+import {
+  getAllSubjectIds,
+  parseThemesSettings,
+} from "../configuration/utils/themes.util";
 
 @Injectable()
 export class UserService {
@@ -224,7 +228,7 @@ export class UserService {
         school: true,
         role: true,
         teamId: true,
-        favoriteSubjectId: true,
+        favoriteSubjectIds: true,
         team: { select: { id: true, name: true } },
         juryTeams: { select: { id: true, name: true } },
         mentorTeams: { select: { id: true, name: true } },
@@ -324,6 +328,10 @@ export class UserService {
       await this.S3BucketService.deleteFile("users", user.profilePicturePath);
     }
 
+    if (updateUserDto.favoriteSubjectIds !== undefined) {
+      await this.validateFavoriteSubjectIds(updateUserDto.favoriteSubjectIds);
+    }
+
     const dataToUpdate: any = {
       ...updateUserDto,
       github: updateUserDto.github ?? undefined,
@@ -360,6 +368,51 @@ export class UserService {
     });
     await this.supabaseAdmin.auth.admin.deleteUser(user.supabaseUserId);
     return;
+  }
+
+  /**
+   * A subject ranking must contain every available subject exactly once,
+   * ordered by decreasing preference.
+   */
+  private async validateFavoriteSubjectIds(
+    favoriteSubjectIds: string[],
+  ): Promise<void> {
+    const config = await this.prisma.hackathonConfig.findUnique({
+      where: { key: HackathonConfigKey.THEMES },
+    });
+
+    const availableSubjectIds = getAllSubjectIds(
+      parseThemesSettings(config?.value),
+    );
+
+    if (availableSubjectIds.length === 0) {
+      throw new BadRequestException(
+        "No subject is available yet, the ranking cannot be saved.",
+      );
+    }
+
+    const rankedIds = new Set(favoriteSubjectIds);
+    if (rankedIds.size !== favoriteSubjectIds.length) {
+      throw new BadRequestException(
+        "The subject ranking contains duplicated subjects.",
+      );
+    }
+
+    const unknownIds = favoriteSubjectIds.filter(
+      (id) => !availableSubjectIds.includes(id),
+    );
+    if (unknownIds.length) {
+      throw new BadRequestException(
+        `Unknown subjects in the ranking: ${unknownIds.join(", ")}`,
+      );
+    }
+
+    const missingIds = availableSubjectIds.filter((id) => !rankedIds.has(id));
+    if (missingIds.length) {
+      throw new BadRequestException(
+        `The ranking must contain every available subject. Missing: ${missingIds.join(", ")}`,
+      );
+    }
   }
 
   private isPasswordStrong(password: string) {

@@ -14,7 +14,7 @@ import { join } from "path";
 import * as path from "path";
 import { promises as fs } from "fs";
 import { MatchmakingTeam } from "./types/matchmaking-team.interface";
-import { ThemesSettings } from "src/configuration/entities/themes_settings";
+import { parseThemesSettings } from "src/configuration/utils/themes.util";
 
 @Injectable()
 export class TeamService {
@@ -133,44 +133,63 @@ export class TeamService {
     const themesConfig = await this.prisma.hackathonConfig.findUnique({
       where: { key: HackathonConfigKey.THEMES },
     });
-    const themeSettings = this.parseThemesSettings(themesConfig?.value || []);
+    const themeSettings = parseThemesSettings(themesConfig?.value || []);
     const subjectsIds = themeSettings.flatMap((t) =>
       t.subjects.map((s) => s.id)
     );
 
-    // 2. Lancement PARALLÈLE des calculs pour chaque sujet
-    const matchmakingTasks = subjectsIds.map(async (subjectId) => {
-      const users = await this.prisma.user.findMany({
-        where: {
-          role: Role.PARTICIPANT,
-          favoriteSubjectId: subjectId,
-          teamId: null,
-        },
-        select: { id: true, school: true },
-      });
-
-      if (users.length === 0) return null;
-
-      // Fichier unique par sujet pour éviter les collisions
-      const userFileName = `users_${subjectId}.json`;
-      const userPath = await this.saveTmpUsersFile(
-        JSON.stringify(users),
-        userFileName
-      );
-
-      // Exécution du script Python
-      const teams = await this.runMatchmakingScript(userPath, configPath);
-
-      return { subjectId, teams };
+    // 2. Regroupement des participants sans équipe par sujet préféré,
+    // c'est-à-dire le premier sujet de leur classement de sujets
+    const participants = await this.prisma.user.findMany({
+      where: {
+        role: Role.PARTICIPANT,
+        teamId: null,
+      },
+      select: { id: true, school: true, favoriteSubjectIds: true },
     });
+
+    const usersByFavoriteSubject = new Map<
+      string,
+      { id: string; school: string | null }[]
+    >();
+
+    for (const participant of participants) {
+      // Le sujet préféré est le premier sujet du classement encore proposé
+      const favoriteSubjectId = participant.favoriteSubjectIds.find((id) =>
+        subjectsIds.includes(id),
+      );
+      if (!favoriteSubjectId) {
+        continue;
+      }
+
+      const usersOfSubject =
+        usersByFavoriteSubject.get(favoriteSubjectId) ?? [];
+      usersOfSubject.push({ id: participant.id, school: participant.school });
+      usersByFavoriteSubject.set(favoriteSubjectId, usersOfSubject);
+    }
+
+    // 3. Lancement PARALLÈLE des calculs pour chaque sujet préféré
+    const matchmakingTasks = [...usersByFavoriteSubject.entries()].map(
+      async ([subjectId, users]) => {
+        // Fichier unique par sujet pour éviter les collisions
+        const userFileName = `users_${subjectId}.json`;
+        const userPath = await this.saveTmpUsersFile(
+          JSON.stringify(users),
+          userFileName,
+        );
+
+        // Exécution du script Python
+        const teams = await this.runMatchmakingScript(userPath, configPath);
+
+        return { subjectId, teams };
+      },
+    );
 
     const results = await Promise.all(matchmakingTasks);
 
     let numberOfTeamsCreated = 0;
 
     for (const result of results) {
-      if (!result) continue;
-
       const { subjectId, teams } = result;
       const themeId = this.getThemeId(themeSettings, subjectId);
 
@@ -510,19 +529,13 @@ export class TeamService {
     }
   }
 
-  private parseThemesSettings(value: unknown): Theme[] {
-    if (!value || typeof value !== "object" || !("themes" in value)) return [];
-    const settings = value as ThemesSettings;
-    return settings.themes ?? [];
-  }
-
   private async validateThemeAndSubject(themeId: string, subjectId: string) {
     const config = await this.prisma.hackathonConfig.findUnique({
       where: { key: HackathonConfigKey.THEMES },
     });
     if (!config) throw new NotFoundException("No themes configuration found.");
 
-    const themes = this.parseThemesSettings(config.value);
+    const themes = parseThemesSettings(config.value);
     const theme = themes.find((t) => t.id === themeId);
     if (!theme)
       throw new NotFoundException(`Theme with id '${themeId}' not found.`);
