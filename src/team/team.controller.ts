@@ -17,6 +17,7 @@ import { SupabaseUser } from "../common/decorators/supabase-user.decorator";
 import { SupabaseDecodedUser } from "../common/decorators/supabase-decoded-user.types";
 import { TeamStatus } from "@prisma/client";
 import { UpdateTeamDTO } from "./dto/update-team.dto";
+import { AutogenerateUserBasedDTO } from "./dto/autogenerate-user-based.dto";
 import { Roles } from "src/common/decorators/roles.decorator";
 import { Role } from "@prisma/client";
 
@@ -63,6 +64,17 @@ export class TeamController {
   async autogenerateTeams(@SupabaseUser() supabaseUser: SupabaseDecodedUser) {
     return this.handleRequest(() =>
       this.teamService.autogenerateTeams(supabaseUser.sub),
+    );
+  }
+
+  @Post("autogenerate/user-based")
+  @Roles(Role.ORGANIZER)
+  async autogenerateUserBasedTeams(
+    @Body() options: AutogenerateUserBasedDTO,
+    @SupabaseUser() supabaseUser: SupabaseDecodedUser,
+  ) {
+    return this.handleRequest(() =>
+      this.teamService.autogenerateUserBasedTeams(options, supabaseUser.sub),
     );
   }
 

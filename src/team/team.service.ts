@@ -15,6 +15,7 @@ import * as path from "path";
 import { promises as fs } from "fs";
 import { MatchmakingTeam } from "./types/matchmaking-team.interface";
 import { parseThemesSettings } from "src/configuration/utils/themes.util";
+import { AutogenerateUserBasedDTO } from "./dto/autogenerate-user-based.dto";
 
 @Injectable()
 export class TeamService {
@@ -96,6 +97,67 @@ export class TeamService {
             new Error(
               `Matchmaking script exited with code ${code}: ${errorString}`
             )
+          );
+        }
+      });
+    });
+  }
+
+  async runUserBasedMatchmakingScript(inputData: any): Promise<{
+    teams: {
+      team_id: number;
+      subject_id: string;
+      members: { user_id: string; school?: string | null }[];
+    }[];
+    unassigned_user_ids: string[];
+  }> {
+    const scriptPath = path.join(
+      process.cwd(),
+      "python",
+      "user_based_matchmaking.py",
+    );
+    const pythonPath = path.join(process.cwd(), "venv", "bin", "python");
+    const tmpDir = join(process.cwd(), "python", "tmp_matchmaking");
+    const filename = `user_based_input_${Date.now()}_${Math.random().toString(36).substring(2, 9)}.json`;
+    const inputFilePath = join(tmpDir, filename);
+
+    await fs.mkdir(tmpDir, { recursive: true });
+    await fs.writeFile(inputFilePath, JSON.stringify(inputData), "utf-8");
+
+    return new Promise((resolve, reject) => {
+      const pythonProcess = spawn(pythonPath, [scriptPath, inputFilePath]);
+
+      let dataString = "";
+      let errorString = "";
+
+      pythonProcess.stdout.on("data", (data: Buffer) => {
+        dataString += data.toString("utf-8");
+      });
+
+      pythonProcess.stderr.on("data", (data: Buffer) => {
+        errorString += data.toString("utf-8");
+      });
+
+      pythonProcess.on("close", async (code: number | null) => {
+        // Clean up temp file
+        await fs.unlink(inputFilePath).catch(() => {});
+
+        if (code === 0) {
+          try {
+            const result = JSON.parse(dataString);
+            resolve(result);
+          } catch (err) {
+            reject(
+              new Error(
+                `Failed to parse user-based matchmaking script output: ${String(err)}`,
+              ),
+            );
+          }
+        } else {
+          reject(
+            new Error(
+              `User-based matchmaking script exited with code ${code}: ${errorString}`,
+            ),
           );
         }
       });
@@ -210,6 +272,116 @@ export class TeamService {
     }
 
     return { count: numberOfTeamsCreated };
+  }
+
+  async autogenerateUserBasedTeams(
+    dto: AutogenerateUserBasedDTO,
+    supabaseUserId: string,
+  ) {
+    await this.validateUserRole(supabaseUserId, Role.ORGANIZER);
+
+    // 1. Fetch themes & subjects configuration
+    const themesConfig = await this.prisma.hackathonConfig.findUnique({
+      where: { key: HackathonConfigKey.THEMES },
+    });
+    const themeSettings = parseThemesSettings(themesConfig?.value || []);
+    const activeSubjectIds = themeSettings.flatMap((t) =>
+      t.subjects.map((s) => s.id),
+    );
+
+    // 2. Fetch default settings from MATCHMAKING config if not provided in dto
+    const matchmakingConfig = await this.prisma.hackathonConfig.findUnique({
+      where: { key: HackathonConfigKey.MATCHMAKING },
+    });
+    const dbSettings = matchmakingConfig?.value as
+      | {
+          teamSizeMin?: number;
+          teamSizeMax?: number;
+          constraints?: any[];
+          isActive?: boolean;
+        }
+      | undefined;
+
+    const teamSizeMin = dto?.teamSizeMin ?? dbSettings?.teamSizeMin ?? 3;
+    const teamSizeMax = dto?.teamSizeMax ?? dbSettings?.teamSizeMax ?? 5;
+    const maxTeamsPerSubject = dto?.maxTeamsPerSubject;
+    const ignoreConstraints =
+      dto?.ignoreConstraints ?? (dbSettings?.isActive === false);
+    const constraints = dto?.constraints ?? dbSettings?.constraints ?? [];
+
+    // 3. Fetch unassigned participants
+    const participants = await this.prisma.user.findMany({
+      where: {
+        role: Role.PARTICIPANT,
+        teamId: null,
+      },
+      select: {
+        id: true,
+        school: true,
+        favoriteSubjectIds: true,
+      },
+    });
+
+    // 4. Run Python OR-Tools user-based matchmaking
+    const inputPayload = {
+      participants: participants.map((p) => ({
+        id: p.id,
+        school: p.school,
+        favoriteSubjectIds: p.favoriteSubjectIds,
+      })),
+      activeSubjectIds,
+      settings: {
+        teamSizeMin,
+        teamSizeMax,
+        maxTeamsPerSubject,
+        ignoreConstraints,
+        constraints,
+      },
+    };
+
+    const matchmakingResult =
+      await this.runUserBasedMatchmakingScript(inputPayload);
+
+    // 5. Persist generated teams
+    const existingTeamsCount = await this.prisma.team.count();
+    const createdTeams: {
+      id: string;
+      name: string;
+      subjectId: string;
+      themeId: string;
+      memberIds: string[];
+    }[] = [];
+
+    for (let i = 0; i < matchmakingResult.teams.length; i++) {
+      const mmTeam = matchmakingResult.teams[i];
+      const teamName = `Team_${existingTeamsCount + i + 1}`;
+      const themeId = this.getThemeId(themeSettings, mmTeam.subject_id);
+      const subjectName = this.getSubjectName(themeSettings, mmTeam.subject_id);
+      const memberIds = mmTeam.members.map((m) => m.user_id);
+
+      const createTeamDTO: CreateTeamDTO = {
+        name: teamName,
+        description: `Auto-generated user-based team for subject: ${subjectName}`,
+        subjectId: mmTeam.subject_id,
+        themeId: themeId,
+        memberIds,
+      };
+
+      const created = await this.create(createTeamDTO, supabaseUserId);
+      createdTeams.push({
+        id: created.id,
+        name: teamName,
+        subjectId: mmTeam.subject_id,
+        themeId: themeId,
+        memberIds,
+      });
+    }
+
+    return {
+      count: createdTeams.length,
+      teams: createdTeams,
+      unassignedUserIds: matchmakingResult.unassigned_user_ids,
+    };
   }
   // ------------------ CRUD ------------------
 
