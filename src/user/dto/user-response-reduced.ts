@@ -7,6 +7,6 @@ export interface UserResponseReduced {
   email: string;
   role: Role;
   school?: string | null;
-  favoriteSubjectId?: string | null;
+  favoriteSubjectIds?: string[];
   teamId?: string | null;
 }

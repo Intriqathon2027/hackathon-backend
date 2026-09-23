@@ -14,7 +14,8 @@ import { join } from "path";
 import * as path from "path";
 import { promises as fs } from "fs";
 import { MatchmakingTeam } from "./types/matchmaking-team.interface";
-import { ThemesSettings } from "src/configuration/entities/themes_settings";
+import { parseThemesSettings } from "src/configuration/utils/themes.util";
+import { AutogenerateUserBasedDTO } from "./dto/autogenerate-user-based.dto";
 
 @Injectable()
 export class TeamService {
@@ -102,6 +103,67 @@ export class TeamService {
     });
   }
 
+  async runUserBasedMatchmakingScript(inputData: any): Promise<{
+    teams: {
+      team_id: number;
+      subject_id: string;
+      members: { user_id: string; school?: string | null }[];
+    }[];
+    unassigned_user_ids: string[];
+  }> {
+    const scriptPath = path.join(
+      process.cwd(),
+      "python",
+      "user_based_matchmaking.py",
+    );
+    const pythonPath = path.join(process.cwd(), "venv", "bin", "python");
+    const tmpDir = join(process.cwd(), "python", "tmp_matchmaking");
+    const filename = `user_based_input_${Date.now()}_${Math.random().toString(36).substring(2, 9)}.json`;
+    const inputFilePath = join(tmpDir, filename);
+
+    await fs.mkdir(tmpDir, { recursive: true });
+    await fs.writeFile(inputFilePath, JSON.stringify(inputData), "utf-8");
+
+    return new Promise((resolve, reject) => {
+      const pythonProcess = spawn(pythonPath, [scriptPath, inputFilePath]);
+
+      let dataString = "";
+      let errorString = "";
+
+      pythonProcess.stdout.on("data", (data: Buffer) => {
+        dataString += data.toString("utf-8");
+      });
+
+      pythonProcess.stderr.on("data", (data: Buffer) => {
+        errorString += data.toString("utf-8");
+      });
+
+      pythonProcess.on("close", async (code: number | null) => {
+        // Clean up temp file
+        await fs.unlink(inputFilePath).catch(() => {});
+
+        if (code === 0) {
+          try {
+            const result = JSON.parse(dataString);
+            resolve(result);
+          } catch (err) {
+            reject(
+              new Error(
+                `Failed to parse user-based matchmaking script output: ${String(err)}`,
+              ),
+            );
+          }
+        } else {
+          reject(
+            new Error(
+              `User-based matchmaking script exited with code ${code}: ${errorString}`,
+            ),
+          );
+        }
+      });
+    });
+  }
+
   async saveTmpMatchmakingSettingsFile(): Promise<string> {
     const config = await this.prisma.hackathonConfig.findUnique({
       where: { key: HackathonConfigKey.MATCHMAKING },
@@ -133,44 +195,63 @@ export class TeamService {
     const themesConfig = await this.prisma.hackathonConfig.findUnique({
       where: { key: HackathonConfigKey.THEMES },
     });
-    const themeSettings = this.parseThemesSettings(themesConfig?.value || []);
+    const themeSettings = parseThemesSettings(themesConfig?.value || []);
     const subjectsIds = themeSettings.flatMap((t) =>
       t.subjects.map((s) => s.id)
     );
 
-    // 2. Lancement PARALLÈLE des calculs pour chaque sujet
-    const matchmakingTasks = subjectsIds.map(async (subjectId) => {
-      const users = await this.prisma.user.findMany({
-        where: {
-          role: Role.PARTICIPANT,
-          favoriteSubjectId: subjectId,
-          teamId: null,
-        },
-        select: { id: true, school: true },
-      });
-
-      if (users.length === 0) return null;
-
-      // Fichier unique par sujet pour éviter les collisions
-      const userFileName = `users_${subjectId}.json`;
-      const userPath = await this.saveTmpUsersFile(
-        JSON.stringify(users),
-        userFileName
-      );
-
-      // Exécution du script Python
-      const teams = await this.runMatchmakingScript(userPath, configPath);
-
-      return { subjectId, teams };
+    // 2. Regroupement des participants sans équipe par sujet préféré,
+    // c'est-à-dire le premier sujet de leur classement de sujets
+    const participants = await this.prisma.user.findMany({
+      where: {
+        role: Role.PARTICIPANT,
+        teamId: null,
+      },
+      select: { id: true, school: true, favoriteSubjectIds: true },
     });
+
+    const usersByFavoriteSubject = new Map<
+      string,
+      { id: string; school: string | null }[]
+    >();
+
+    for (const participant of participants) {
+      // Le sujet préféré est le premier sujet du classement encore proposé
+      const favoriteSubjectId = participant.favoriteSubjectIds.find((id) =>
+        subjectsIds.includes(id),
+      );
+      if (!favoriteSubjectId) {
+        continue;
+      }
+
+      const usersOfSubject =
+        usersByFavoriteSubject.get(favoriteSubjectId) ?? [];
+      usersOfSubject.push({ id: participant.id, school: participant.school });
+      usersByFavoriteSubject.set(favoriteSubjectId, usersOfSubject);
+    }
+
+    // 3. Lancement PARALLÈLE des calculs pour chaque sujet préféré
+    const matchmakingTasks = [...usersByFavoriteSubject.entries()].map(
+      async ([subjectId, users]) => {
+        // Fichier unique par sujet pour éviter les collisions
+        const userFileName = `users_${subjectId}.json`;
+        const userPath = await this.saveTmpUsersFile(
+          JSON.stringify(users),
+          userFileName,
+        );
+
+        // Exécution du script Python
+        const teams = await this.runMatchmakingScript(userPath, configPath);
+
+        return { subjectId, teams };
+      },
+    );
 
     const results = await Promise.all(matchmakingTasks);
 
     let numberOfTeamsCreated = 0;
 
     for (const result of results) {
-      if (!result) continue;
-
       const { subjectId, teams } = result;
       const themeId = this.getThemeId(themeSettings, subjectId);
 
@@ -191,6 +272,116 @@ export class TeamService {
     }
 
     return { count: numberOfTeamsCreated };
+  }
+
+  async autogenerateUserBasedTeams(
+    dto: AutogenerateUserBasedDTO,
+    supabaseUserId: string,
+  ) {
+    await this.validateUserRole(supabaseUserId, Role.ORGANIZER);
+
+    // 1. Fetch themes & subjects configuration
+    const themesConfig = await this.prisma.hackathonConfig.findUnique({
+      where: { key: HackathonConfigKey.THEMES },
+    });
+    const themeSettings = parseThemesSettings(themesConfig?.value || []);
+    const activeSubjectIds = themeSettings.flatMap((t) =>
+      t.subjects.map((s) => s.id),
+    );
+
+    // 2. Fetch default settings from MATCHMAKING config if not provided in dto
+    const matchmakingConfig = await this.prisma.hackathonConfig.findUnique({
+      where: { key: HackathonConfigKey.MATCHMAKING },
+    });
+    const dbSettings = matchmakingConfig?.value as
+      | {
+          teamSizeMin?: number;
+          teamSizeMax?: number;
+          constraints?: any[];
+          isActive?: boolean;
+        }
+      | undefined;
+
+    const teamSizeMin = dto?.teamSizeMin ?? dbSettings?.teamSizeMin ?? 3;
+    const teamSizeMax = dto?.teamSizeMax ?? dbSettings?.teamSizeMax ?? 5;
+    const maxTeamsPerSubject = dto?.maxTeamsPerSubject;
+    const ignoreConstraints =
+      dto?.ignoreConstraints ?? (dbSettings?.isActive === false);
+    const constraints = dto?.constraints ?? dbSettings?.constraints ?? [];
+
+    // 3. Fetch unassigned participants
+    const participants = await this.prisma.user.findMany({
+      where: {
+        role: Role.PARTICIPANT,
+        teamId: null,
+      },
+      select: {
+        id: true,
+        school: true,
+        favoriteSubjectIds: true,
+      },
+    });
+
+    // 4. Run Python OR-Tools user-based matchmaking
+    const inputPayload = {
+      participants: participants.map((p) => ({
+        id: p.id,
+        school: p.school,
+        favoriteSubjectIds: p.favoriteSubjectIds,
+      })),
+      activeSubjectIds,
+      settings: {
+        teamSizeMin,
+        teamSizeMax,
+        maxTeamsPerSubject,
+        ignoreConstraints,
+        constraints,
+      },
+    };
+
+    const matchmakingResult =
+      await this.runUserBasedMatchmakingScript(inputPayload);
+
+    // 5. Persist generated teams
+    const existingTeamsCount = await this.prisma.team.count();
+    const createdTeams: {
+      id: string;
+      name: string;
+      subjectId: string;
+      themeId: string;
+      memberIds: string[];
+    }[] = [];
+
+    for (let i = 0; i < matchmakingResult.teams.length; i++) {
+      const mmTeam = matchmakingResult.teams[i];
+      const teamName = `Team_${existingTeamsCount + i + 1}`;
+      const themeId = this.getThemeId(themeSettings, mmTeam.subject_id);
+      const subjectName = this.getSubjectName(themeSettings, mmTeam.subject_id);
+      const memberIds = mmTeam.members.map((m) => m.user_id);
+
+      const createTeamDTO: CreateTeamDTO = {
+        name: teamName,
+        description: `Auto-generated user-based team for subject: ${subjectName}`,
+        subjectId: mmTeam.subject_id,
+        themeId: themeId,
+        memberIds,
+      };
+
+      const created = await this.create(createTeamDTO, supabaseUserId);
+      createdTeams.push({
+        id: created.id,
+        name: teamName,
+        subjectId: mmTeam.subject_id,
+        themeId: themeId,
+        memberIds,
+      });
+    }
+
+    return {
+      count: createdTeams.length,
+      teams: createdTeams,
+      unassignedUserIds: matchmakingResult.unassigned_user_ids,
+    };
   }
   // ------------------ CRUD ------------------
 
@@ -510,19 +701,13 @@ export class TeamService {
     }
   }
 
-  private parseThemesSettings(value: unknown): Theme[] {
-    if (!value || typeof value !== "object" || !("themes" in value)) return [];
-    const settings = value as ThemesSettings;
-    return settings.themes ?? [];
-  }
-
   private async validateThemeAndSubject(themeId: string, subjectId: string) {
     const config = await this.prisma.hackathonConfig.findUnique({
       where: { key: HackathonConfigKey.THEMES },
     });
     if (!config) throw new NotFoundException("No themes configuration found.");
 
-    const themes = this.parseThemesSettings(config.value);
+    const themes = parseThemesSettings(config.value);
     const theme = themes.find((t) => t.id === themeId);
     if (!theme)
       throw new NotFoundException(`Theme with id '${themeId}' not found.`);

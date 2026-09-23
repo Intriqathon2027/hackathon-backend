@@ -37,7 +37,7 @@ model User {
   discord        Json?
   profilePicturePath String?
   invitationSent Boolean  @default(false)
-  favoriteSubjectId String?
+  favoriteSubjectIds String[]
 
   // 1:N
   teamId   String? 

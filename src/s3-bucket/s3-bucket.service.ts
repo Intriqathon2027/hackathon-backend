@@ -57,7 +57,20 @@ export class S3BucketService {
       throw new BadRequestException("File too large (max 50MB)");
     }
 
-    const filePath = `${Date.now()}-${file.originalname}`;
+    const ext = file.originalname.includes(".")
+      ? "." + file.originalname.split(".").pop()!.toLowerCase()
+      : "";
+    const nameWithoutExt = file.originalname.includes(".")
+      ? file.originalname.substring(0, file.originalname.lastIndexOf("."))
+      : file.originalname;
+
+    const sanitizedBase = nameWithoutExt
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-zA-Z0-9_-]/g, "_")
+      .replace(/_+/g, "_");
+
+    const filePath = `${Date.now()}-${sanitizedBase || "file"}${ext}`;
 
     const { error } = await this.supabase.storage
       .from(bucket)

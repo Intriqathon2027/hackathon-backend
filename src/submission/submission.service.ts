@@ -55,7 +55,7 @@ export class SubmissionService {
   }
 
   async getSubmissions(teamId: string) {
-    const submission = await this.prisma.submission.findUnique({
+    let submission = await this.prisma.submission.findUnique({
       where: { teamId },
       include: {
         evaluations: true,
@@ -64,7 +64,22 @@ export class SubmissionService {
     });
 
     if (!submission) {
-      throw new NotFoundException(`Submission for teamId ${teamId} not found`);
+      const team = await this.prisma.team.findUnique({ where: { id: teamId } });
+      if (!team) {
+        throw new NotFoundException(`Team with id ${teamId} not found`);
+      }
+      submission = await this.prisma.submission.create({
+        data: {
+          teamId,
+          grade: null,
+          status: SubmissionStatus.NOT_SUBMITTED,
+          submissionFilePath: null,
+        },
+        include: {
+          evaluations: true,
+          comments: true,
+        },
+      });
     }
 
     return submission;
