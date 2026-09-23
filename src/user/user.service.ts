@@ -328,7 +328,12 @@ export class UserService {
       await this.S3BucketService.deleteFile("users", user.profilePicturePath);
     }
 
-    if (updateUserDto.favoriteSubjectIds !== undefined) {
+    if (user.role !== Role.PARTICIPANT) {
+      delete updateUserDto.favoriteSubjectIds;
+    } else if (
+      updateUserDto.favoriteSubjectIds !== undefined &&
+      updateUserDto.favoriteSubjectIds.length > 0
+    ) {
       await this.validateFavoriteSubjectIds(updateUserDto.favoriteSubjectIds);
     }
 

@@ -50,20 +50,26 @@ export class ConfigurationService {
       );
     }
 
-    if (Array.isArray(value)) {
-      const instances = value.map((item) => plainToInstance(schema, item));
-      for (const instance of instances) {
+    try {
+      if (Array.isArray(value)) {
+        const instances = value.map((item) => plainToInstance(schema, item));
+        for (const instance of instances) {
+          await validateOrReject(instance as object, {
+            whitelist: true,
+            forbidNonWhitelisted: true,
+          });
+        }
+      } else {
+        const instance = plainToInstance(schema, value);
         await validateOrReject(instance as object, {
           whitelist: true,
           forbidNonWhitelisted: true,
         });
       }
-    } else {
-      const instance = plainToInstance(schema, value);
-      await validateOrReject(instance as object, {
-        whitelist: true,
-        forbidNonWhitelisted: true,
-      });
+    } catch (errors) {
+      throw new BadRequestException(
+        `Validation failed for key '${key}': ${JSON.stringify(errors)}`,
+      );
     }
   }
 
@@ -284,15 +290,23 @@ export class ConfigurationService {
     const currentSettings = await this.getValidatedPhaseSettings();
 
     const resetPhases = DEFAULT_HACKATHON_PHASES.map((defaultPhase) => {
-      if (defaultPhase.order === 4) {
-        const existingPhase4 = currentSettings.phases.find(
-          (p) => p.order === 4,
-        );
-        if (existingPhase4?.endDate) {
-          return { ...defaultPhase, endDate: existingPhase4.endDate };
-        }
-      }
-      return defaultPhase;
+      const existing = currentSettings.phases.find(
+        (p) => p.order === defaultPhase.order,
+      );
+      const name =
+        existing?.name && !existing.name.startsWith("Phase ")
+          ? existing.name
+          : defaultPhase.name;
+      const endDate =
+        defaultPhase.order === 4 && existing?.endDate
+          ? existing.endDate
+          : defaultPhase.endDate;
+
+      return {
+        ...defaultPhase,
+        name,
+        endDate,
+      };
     });
 
     return this.update(

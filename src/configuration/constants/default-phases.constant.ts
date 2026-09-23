@@ -2,7 +2,7 @@ import { Phase } from "../entities/phase_settings";
 
 export const DEFAULT_HACKATHON_PHASES: Phase[] = [
   {
-    name: "Phase 1",
+    name: "Complétion de Profil",
     order: 1,
     status: "PENDING",
     endDate: null,
@@ -10,7 +10,7 @@ export const DEFAULT_HACKATHON_PHASES: Phase[] = [
     optionalPhase: false,
   },
   {
-    name: "Phase 2",
+    name: "Sélection du Sujet",
     order: 2,
     status: "NOT_STARTED",
     endDate: null,
@@ -18,7 +18,7 @@ export const DEFAULT_HACKATHON_PHASES: Phase[] = [
     optionalPhase: false,
   },
   {
-    name: "Phase 3",
+    name: "Formation des Équipes",
     order: 3,
     status: "NOT_STARTED",
     endDate: null,
@@ -26,7 +26,7 @@ export const DEFAULT_HACKATHON_PHASES: Phase[] = [
     optionalPhase: true,
   },
   {
-    name: "Phase 4",
+    name: "Hackathon",
     order: 4,
     status: "NOT_STARTED",
     endDate: null,
@@ -34,7 +34,7 @@ export const DEFAULT_HACKATHON_PHASES: Phase[] = [
     optionalPhase: false,
   },
   {
-    name: "Phase 5",
+    name: "Évaluation & Feedback",
     order: 5,
     status: "NOT_STARTED",
     endDate: null,
@@ -42,7 +42,7 @@ export const DEFAULT_HACKATHON_PHASES: Phase[] = [
     optionalPhase: true,
   },
   {
-    name: "Phase 6",
+    name: "Clôture & Annonces",
     order: 6,
     status: "NOT_STARTED",
     endDate: null,
