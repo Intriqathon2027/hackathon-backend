@@ -1,12 +1,14 @@
 # -----------------------------
 # Étape 1 : Build du backend
 # -----------------------------
-FROM node:22-alpine AS build
+FROM node:22-trixie-slim AS build
 
 WORKDIR /app
 
 COPY package*.json ./
-RUN apk add --no-cache python3 py3-pip build-base libstdc++ bash
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      python3 python3-venv python3-pip build-essential openssl ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 RUN npm install
 
 COPY . .
