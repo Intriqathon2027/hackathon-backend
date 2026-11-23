@@ -10,7 +10,7 @@ import { UpdateUserDto } from "./dto/update-user.dto";
 import { PrismaService } from "../prisma/prisma.service";
 import { UUID } from "crypto";
 import { UserResponse } from "./dto/user-response";
-import { HackathonConfigKey, Role } from "@prisma/client";
+import { HackathonConfigKey, Prisma, Role } from "@prisma/client";
 import { createClient } from "@supabase/supabase-js";
 import { UserResponseReduced } from "./dto/user-response-reduced";
 import { ExpertTeamsResponse } from "./dto/expert-teams-response";
@@ -33,7 +33,7 @@ export class UserService {
     private readonly prisma: PrismaService,
     private readonly mailerService: MailerService,
     private readonly S3BucketService: S3BucketService,
-  ) {}
+  ) { }
 
   async create(
     createUserDto: CreateUserDto,
@@ -339,9 +339,17 @@ export class UserService {
 
     const dataToUpdate: any = {
       ...updateUserDto,
-      github: updateUserDto.github ?? undefined,
-      discord: updateUserDto.discord ?? undefined,
     };
+
+    if (updateUserDto.github !== undefined) {
+      dataToUpdate.github =
+        updateUserDto.github === null ? Prisma.DbNull : updateUserDto.github;
+    }
+
+    if (updateUserDto.discord !== undefined) {
+      dataToUpdate.discord =
+        updateUserDto.discord === null ? Prisma.DbNull : updateUserDto.discord;
+    }
 
     if (updateUserDto.profilePicturePath !== undefined) {
       dataToUpdate.profilePicturePath = updateUserDto.profilePicturePath;
