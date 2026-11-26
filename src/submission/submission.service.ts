@@ -17,7 +17,7 @@ import { validateSync } from "class-validator";
 
 @Injectable()
 export class SubmissionService {
-  constructor(private readonly prisma: PrismaService) { }
+  constructor(private readonly prisma: PrismaService) {}
 
   async createSubmission(teamId: string) {
     const team = await this.prisma.team.findUnique({ where: { id: teamId } });
@@ -99,7 +99,6 @@ export class SubmissionService {
       where: { key: HackathonConfigKey.PHASES },
     });
 
-
     if (!hackathonConfig) {
       throw new NotFoundException("Hackathon configuration not found");
     }
@@ -147,7 +146,10 @@ export class SubmissionService {
     return new Date(codingPhase.endDate);
   }
 
-  async updateSubmission(submission: UpdateSubmissionDto, supabaseUserId: string) {
+  async updateSubmission(
+    submission: UpdateSubmissionDto,
+    supabaseUserId: string,
+  ) {
     const user = await this.prisma.user.findUnique({
       where: { supabaseUserId },
     });
@@ -164,7 +166,9 @@ export class SubmissionService {
 
     const dueDate = await this.getDueDate();
     if (new Date() > dueDate) {
-      throw new PreconditionFailedException("Submission update is not allowed after the due date");
+      throw new PreconditionFailedException(
+        "Submission update is not allowed after the due date",
+      );
     }
 
     return this.prisma.submission.update({

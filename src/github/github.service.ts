@@ -14,6 +14,9 @@ interface GitHubData {
   accessToken?: string;
   token?: string;
   access_token?: string;
+  login?: string;
+  username?: string;
+  nickname?: string;
   [key: string]: unknown;
 }
 
@@ -97,7 +100,8 @@ export class GithubService {
     const textsConfig = await this.configurationService.findOne(
       HackathonConfigKey.TEXTS,
     );
-    const hackathonName = (textsConfig.value as any).hackathonName;
+    const hackathonName = (textsConfig.value as { hackathonName?: string })
+      ?.hackathonName;
 
     if (!hackathonName) {
       throw new BadRequestException("Hackathon name not configured");
@@ -163,7 +167,11 @@ export class GithubService {
     });
 
     // 5. Loop through teams and create repos / add members
-    const results: any[] = [];
+    const results: Array<{
+      team: string;
+      repo?: string;
+      status: string;
+    }> = [];
 
     for (const team of teams) {
       const repoName = team.name.replace(/\s+/g, "-").toLowerCase(); // Normalize name
@@ -171,7 +179,7 @@ export class GithubService {
       // Create Repo
       let repoUrl = "";
       try {
-        const createRes = await axios.post(
+        const createRes = await axios.post<{ html_url: string }>(
           `https://api.github.com/orgs/${orgName}/repos`,
           {
             name: repoName,
@@ -190,7 +198,7 @@ export class GithubService {
           } else if (error.response?.status === 403) {
             // 🛑 CRITIQUE : L'utilisateur n'a pas les droits de créer un repo
             throw new ForbiddenException(
-              `You do not have permission to create repositories in the organization '${orgName}'. Please ensure you are an organization owner or have repository creation privileges.`
+              `You do not have permission to create repositories in the organization '${orgName}'. Please ensure you are an organization owner or have repository creation privileges.`,
             );
           } else {
             console.error(`Failed to create repo for team ${team.name}`, error);
@@ -236,7 +244,7 @@ export class GithubService {
         const username =
           memberGithubData.login ||
           memberGithubData.username ||
-          (memberGithubData as any).nickname;
+          memberGithubData.nickname;
 
         if (username) {
           try {

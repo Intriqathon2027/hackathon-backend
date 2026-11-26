@@ -1,5 +1,13 @@
-import { Controller, Get, Query, Res } from "@nestjs/common";
-import { Response } from "express";
+import {
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Query,
+  Req,
+  Res,
+} from "@nestjs/common";
+import { Request, Response } from "express";
 import { AuthService, DiscordApiUser, GithubApiUser } from "./auth.service";
 import { Public } from "src/common/decorators/public.decorator";
 import { DiscordUser } from "passport-discord-auth";
@@ -15,7 +23,7 @@ type Provider = "discord" | "github";
 
 @Controller("auth")
 export class AuthController {
-  constructor(private readonly authService: AuthService) { }
+  constructor(private readonly authService: AuthService) {}
 
   // -----------------------------
   // DISCORD CALLBACK
@@ -69,6 +77,38 @@ export class AuthController {
           user,
         ),
     });
+  }
+
+  // -----------------------------
+  // UNLINK DISCORD
+  // -----------------------------
+  @Delete("discord/:userId")
+  async unlinkDiscord(
+    @Param("userId") userId: string,
+    @Req()
+    req: Request & {
+      user?: { id?: string; sub?: string; supabaseUserId?: string };
+    },
+  ): Promise<void> {
+    const supabaseUserId =
+      req.user?.supabaseUserId ?? req.user?.id ?? req.user?.sub ?? "";
+    await this.authService.unlinkDiscord(userId, supabaseUserId);
+  }
+
+  // -----------------------------
+  // UNLINK GITHUB
+  // -----------------------------
+  @Delete("github/:userId")
+  async unlinkGithub(
+    @Param("userId") userId: string,
+    @Req()
+    req: Request & {
+      user?: { id?: string; sub?: string; supabaseUserId?: string };
+    },
+  ): Promise<void> {
+    const supabaseUserId =
+      req.user?.supabaseUserId ?? req.user?.id ?? req.user?.sub ?? "";
+    await this.authService.unlinkGithub(userId, supabaseUserId);
   }
 
   // -----------------------------

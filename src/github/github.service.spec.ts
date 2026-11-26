@@ -11,8 +11,6 @@ const mockedAxios = axios as jest.Mocked<typeof axios>;
 
 describe("GithubService", () => {
   let service: GithubService;
-  let prismaService: PrismaService;
-  let configService: ConfigurationService;
 
   const mockUser = {
     id: "1",
@@ -64,18 +62,22 @@ describe("GithubService", () => {
       isAxiosError: true,
       response: { status: 403 },
     };
-    
+
     // Correctly mock isAxiosError to check content or just return true for our fake error
-    (axios.isAxiosError as unknown as jest.Mock).mockImplementation((payload) => {
-        return payload && payload.isAxiosError === true;
-    });
+    (axios.isAxiosError as unknown as jest.Mock).mockImplementation(
+      (payload: unknown) =>
+        typeof payload === "object" &&
+        payload !== null &&
+        "isAxiosError" in payload &&
+        (payload as { isAxiosError?: unknown }).isAxiosError === true,
+    );
 
     // Make sure we reject on the FIRST post call if that's what we expect
     // or use mockImplementation to be sure.
     mockedAxios.post.mockRejectedValue(err403);
 
     await expect(service.initializeHackathonOrg("sup_1")).rejects.toThrow(
-      ForbiddenException
+      ForbiddenException,
     );
   });
 });

@@ -78,6 +78,14 @@ export class AuthService {
     await this.userService.update(userId_uuid, updatedUser, supabaseUserId);
   }
 
+  async unlinkDiscord(userId: string, supabaseUserId: string): Promise<void> {
+    await this.userService.update(
+      userId as UUID,
+      { discord: null },
+      supabaseUserId,
+    );
+  }
+
   // -------------------------
   // GitHub OAuth2
   // -------------------------
@@ -119,6 +127,14 @@ export class AuthService {
           accessToken: githubUser.access_token,
         },
       },
+      supabaseUserId,
+    );
+  }
+
+  async unlinkGithub(userId: string, supabaseUserId: string): Promise<void> {
+    await this.userService.update(
+      userId as UUID,
+      { github: null },
       supabaseUserId,
     );
   }

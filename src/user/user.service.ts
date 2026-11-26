@@ -10,7 +10,7 @@ import { UpdateUserDto } from "./dto/update-user.dto";
 import { PrismaService } from "../prisma/prisma.service";
 import { UUID } from "crypto";
 import { UserResponse } from "./dto/user-response";
-import { HackathonConfigKey, Role } from "@prisma/client";
+import { HackathonConfigKey, Prisma, Role } from "@prisma/client";
 import { createClient } from "@supabase/supabase-js";
 import { UserResponseReduced } from "./dto/user-response-reduced";
 import { ExpertTeamsResponse } from "./dto/expert-teams-response";
@@ -337,14 +337,21 @@ export class UserService {
       await this.validateFavoriteSubjectIds(updateUserDto.favoriteSubjectIds);
     }
 
-    const dataToUpdate: any = {
-      ...updateUserDto,
-      github: updateUserDto.github ?? undefined,
-      discord: updateUserDto.discord ?? undefined,
+    const { github, discord, profilePicturePath, ...rest } = updateUserDto;
+    const dataToUpdate: Prisma.UserUpdateInput = {
+      ...rest,
     };
 
-    if (updateUserDto.profilePicturePath !== undefined) {
-      dataToUpdate.profilePicturePath = updateUserDto.profilePicturePath;
+    if (github !== undefined) {
+      dataToUpdate.github = github === null ? Prisma.DbNull : github;
+    }
+
+    if (discord !== undefined) {
+      dataToUpdate.discord = discord === null ? Prisma.DbNull : discord;
+    }
+
+    if (profilePicturePath !== undefined) {
+      dataToUpdate.profilePicturePath = profilePicturePath;
     }
 
     return await this.prisma.user.update({

@@ -67,9 +67,7 @@ export class AnnouncementController {
 
   @Delete(":id")
   @Roles(Role.ORGANIZER)
-  async delete(
-    @Param("id") id: string,
-  ): Promise<void> {
+  async delete(@Param("id") id: string): Promise<void> {
     return this.announcementService.delete(id);
   }
 
