@@ -6,16 +6,23 @@ import * as request from "supertest";
 jest.mock("../src/supabase/supabase.guard", () => {
   return {
     SupabaseGuard: class {
-      canActivate(context: any) {
+      canActivate(context: {
+        switchToHttp: () => {
+          getRequest: () => {
+            headers: Record<string, string | undefined>;
+            user?: { sub: string };
+          };
+        };
+      }) {
         const req = context.switchToHttp().getRequest();
-        const mockId = req.headers['x-mock-user-id'];
+        const mockId = req.headers["x-mock-user-id"];
         if (mockId) {
           req.user = { sub: mockId };
           return true;
         }
         return false;
       }
-    }
+    },
   };
 });
 
@@ -27,10 +34,10 @@ describe("Security (e2e)", () => {
   let app: INestApplication;
   let prisma: PrismaService;
 
-  let organizerUser: any;
-  let participant1: any;
-  let participant2: any;
-  let team1: any;
+  let organizerUser: { supabaseUserId: string };
+  let participant1: { id: string; supabaseUserId: string };
+  let participant2: { supabaseUserId: string };
+  let team1: { id: string };
 
   beforeAll(async () => {
     // No overrides needed if mocked via jest.mock
@@ -45,82 +52,88 @@ describe("Security (e2e)", () => {
     // Cleanup
     await prisma.evaluation.deleteMany();
     await prisma.submission.deleteMany();
-    await prisma.team.deleteMany(); 
-    await prisma.user.deleteMany({ where: { email: { contains: 'test_sec_' } } });
+    await prisma.team.deleteMany();
+    await prisma.user.deleteMany({
+      where: { email: { contains: "test_sec_" } },
+    });
 
     // Setup Users
     organizerUser = await prisma.user.create({
       data: {
-        email: 'test_sec_org@example.com',
-        firstname: 'Org',
-        lastname: 'One',
-        supabaseUserId: 'sup_org_1',
+        email: "test_sec_org@example.com",
+        firstname: "Org",
+        lastname: "One",
+        supabaseUserId: "sup_org_1",
         role: Role.ORGANIZER,
-      }
+      },
     });
 
     participant1 = await prisma.user.create({
       data: {
-        email: 'test_sec_p1@example.com',
-        firstname: 'P1',
-        lastname: 'One',
-        supabaseUserId: 'sup_p1_1',
+        email: "test_sec_p1@example.com",
+        firstname: "P1",
+        lastname: "One",
+        supabaseUserId: "sup_p1_1",
         role: Role.PARTICIPANT,
-      }
+      },
     });
 
     participant2 = await prisma.user.create({
       data: {
-        email: 'test_sec_p2@example.com',
-        firstname: 'P2',
-        lastname: 'One',
-        supabaseUserId: 'sup_p2_1',
+        email: "test_sec_p2@example.com",
+        firstname: "P2",
+        lastname: "One",
+        supabaseUserId: "sup_p2_1",
         role: Role.PARTICIPANT,
-      }
+      },
     });
 
     // Create Team for Participant 1
     team1 = await prisma.team.create({
       data: {
         name: "SecurityTestTeam",
-        themeId: "theme1", 
+        themeId: "theme1",
         subjectId: "subject1",
         members: {
-          connect: { id: participant1.id }
-        }
-      }
+          connect: { id: participant1.id },
+        },
+      },
     });
   });
 
   afterAll(async () => {
     if (prisma) {
-        await prisma.user.deleteMany({ where: { email: { contains: 'test_sec_' } } });
-        await prisma.team.deleteMany({ where: { id: team1.id } });
+      await prisma.user.deleteMany({
+        where: { email: { contains: "test_sec_" } },
+      });
+      await prisma.team.deleteMany({ where: { id: team1.id } });
     }
     await app.close();
   });
 
   describe("Announcement Controller (RBAC)", () => {
     it("should allow Organizer to create announcement", () => {
-      return request(app.getHttpServer())
+      const server = app.getHttpServer() as Parameters<typeof request>[0];
+      return request(server)
         .post("/announcement")
-        .set('x-mock-user-id', organizerUser.supabaseUserId)
+        .set("x-mock-user-id", organizerUser.supabaseUserId)
         .send({
           title: "Test Announcement",
           content: "Security Check",
-          author: "Org"
+          author: "Org",
         })
         .expect(201);
     });
 
     it("should DENY Participant to create announcement", () => {
-      return request(app.getHttpServer())
+      const server = app.getHttpServer() as Parameters<typeof request>[0];
+      return request(server)
         .post("/announcement")
-        .set('x-mock-user-id', participant1.supabaseUserId)
+        .set("x-mock-user-id", participant1.supabaseUserId)
         .send({
           title: "Hacked Announcement",
           content: "I am P1",
-          author: "P1"
+          author: "P1",
         })
         .expect(403);
     });
@@ -128,11 +141,12 @@ describe("Security (e2e)", () => {
 
   describe("Team Service (Update Permissions)", () => {
     it("should allow Member to update their team", () => {
-      return request(app.getHttpServer())
+      const server = app.getHttpServer() as Parameters<typeof request>[0];
+      return request(server)
         .put(`/team/${team1.id}`)
-        .set('x-mock-user-id', participant1.supabaseUserId)
+        .set("x-mock-user-id", participant1.supabaseUserId)
         .send({
-          name: "Updated by Member"
+          name: "Updated by Member",
         })
         .expect(200);
     });
@@ -140,21 +154,23 @@ describe("Security (e2e)", () => {
     it("should allow Organizer to update any team", () => {
       // First, confirm the name was updated by participant1
       // Then update again by organizer
-      return request(app.getHttpServer())
+      const server = app.getHttpServer() as Parameters<typeof request>[0];
+      return request(server)
         .put(`/team/${team1.id}`)
-        .set('x-mock-user-id', organizerUser.supabaseUserId)
+        .set("x-mock-user-id", organizerUser.supabaseUserId)
         .send({
-          name: "Updated by Organizer"
+          name: "Updated by Organizer",
         })
         .expect(200);
     });
 
     it("should DENY Non-Member Participant to update team", () => {
-      return request(app.getHttpServer())
+      const server = app.getHttpServer() as Parameters<typeof request>[0];
+      return request(server)
         .put(`/team/${team1.id}`)
-        .set('x-mock-user-id', participant2.supabaseUserId)
+        .set("x-mock-user-id", participant2.supabaseUserId)
         .send({
-          name: "Hacked by P2"
+          name: "Hacked by P2",
         })
         .expect(403);
     });

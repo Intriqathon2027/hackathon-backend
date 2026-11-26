@@ -36,7 +36,8 @@ export class AutogenerateUserBasedDTO {
   teamSizeMax?: number;
 
   @ApiProperty({
-    description: "Maximum number of teams that can be assigned to a single subject",
+    description:
+      "Maximum number of teams that can be assigned to a single subject",
     example: 2,
     required: false,
   })

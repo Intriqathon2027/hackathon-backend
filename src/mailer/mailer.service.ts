@@ -13,9 +13,7 @@ export class MailerService {
   private readonly resend: Resend;
   private readonly allowedEmails: string[];
 
-  constructor(
-    private readonly prisma: PrismaService,
-  ) {
+  constructor(private readonly prisma: PrismaService) {
     this.resend = new Resend(process.env.RESEND_API_KEY);
     const allowed = process.env.ALLOWED_EMAILS;
     this.allowedEmails = allowed

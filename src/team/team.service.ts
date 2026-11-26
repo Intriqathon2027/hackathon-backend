@@ -38,7 +38,7 @@ export class TeamService {
       }
     }
     throw new NotFoundException(
-      `No theme found for subject with id '${subjectId}'.`
+      `No theme found for subject with id '${subjectId}'.`,
     );
   }
 
@@ -54,7 +54,7 @@ export class TeamService {
 
   async runMatchmakingScript(
     usersPath: string,
-    configPath: string
+    configPath: string,
   ): Promise<MatchmakingTeam[]> {
     const scriptPath = path.join(process.cwd(), "python", "matchmaking.py");
     const pythonPath = path.join(process.cwd(), "venv", "bin", "python");
@@ -82,21 +82,21 @@ export class TeamService {
         if (code === 0) {
           try {
             const result: MatchmakingTeam[] = JSON.parse(
-              dataString
+              dataString,
             ) as MatchmakingTeam[];
             resolve(result);
           } catch (err) {
             reject(
               new Error(
-                `Failed to parse matchmaking script output: ${String(err)}`
-              )
+                `Failed to parse matchmaking script output: ${String(err)}`,
+              ),
             );
           }
         } else {
           reject(
             new Error(
-              `Matchmaking script exited with code ${code}: ${errorString}`
-            )
+              `Matchmaking script exited with code ${code}: ${errorString}`,
+            ),
           );
         }
       });
@@ -138,13 +138,20 @@ export class TeamService {
         errorString += data.toString("utf-8");
       });
 
-      pythonProcess.on("close", async (code: number | null) => {
+      pythonProcess.on("close", (code: number | null) => {
         // Clean up temp file
-        await fs.unlink(inputFilePath).catch(() => {});
+        void fs.unlink(inputFilePath).catch(() => {});
 
         if (code === 0) {
           try {
-            const result = JSON.parse(dataString);
+            const result = JSON.parse(dataString) as {
+              teams: {
+                team_id: number;
+                subject_id: string;
+                members: { user_id: string; school?: string | null }[];
+              }[];
+              unassigned_user_ids: string[];
+            };
             resolve(result);
           } catch (err) {
             reject(
@@ -197,7 +204,7 @@ export class TeamService {
     });
     const themeSettings = parseThemesSettings(themesConfig?.value || []);
     const subjectsIds = themeSettings.flatMap((t) =>
-      t.subjects.map((s) => s.id)
+      t.subjects.map((s) => s.id),
     );
 
     // 2. Regroupement des participants sans équipe par sujet préféré,
@@ -267,7 +274,7 @@ export class TeamService {
           memberIds: mmTeam.members.map((m) => m.user_id),
         };
 
-        await this.create(createTeamDTO, supabaseUserId);
+        await this.create(createTeamDTO);
       }
     }
 
@@ -306,7 +313,7 @@ export class TeamService {
     const teamSizeMax = dto?.teamSizeMax ?? dbSettings?.teamSizeMax ?? 5;
     const maxTeamsPerSubject = dto?.maxTeamsPerSubject;
     const ignoreConstraints =
-      dto?.ignoreConstraints ?? (dbSettings?.isActive === false);
+      dto?.ignoreConstraints ?? dbSettings?.isActive === false;
     const constraints = dto?.constraints ?? dbSettings?.constraints ?? [];
 
     // 3. Fetch unassigned participants
@@ -367,7 +374,7 @@ export class TeamService {
         memberIds,
       };
 
-      const created = await this.create(createTeamDTO, supabaseUserId);
+      const created = await this.create(createTeamDTO);
       createdTeams.push({
         id: created.id,
         name: teamName,
@@ -385,10 +392,10 @@ export class TeamService {
   }
   // ------------------ CRUD ------------------
 
-  async create(newTeamData: CreateTeamDTO, supabaseUserId: string) {
+  async create(newTeamData: CreateTeamDTO) {
     await this.validateThemeAndSubject(
       newTeamData.themeId,
-      newTeamData.subjectId
+      newTeamData.subjectId,
     );
 
     await Promise.all([
@@ -418,16 +425,12 @@ export class TeamService {
     return { id: team.id };
   }
 
-  async update(
-    id: string,
-    updateTeamData: UpdateTeamDTO,
-    supabaseUserId: string
-  ) {
+  async update(id: string, updateTeamData: UpdateTeamDTO) {
     await this.checkTeamExists(id);
     if (updateTeamData.themeId && updateTeamData.subjectId) {
       await this.validateThemeAndSubject(
         updateTeamData.themeId,
-        updateTeamData.subjectId
+        updateTeamData.subjectId,
       );
     }
     await Promise.all([
@@ -472,7 +475,7 @@ export class TeamService {
   async updateIgnoreConstraints(
     id: string,
     ignoreConstraints: boolean,
-    supabaseUserId: string
+    supabaseUserId: string,
   ) {
     await this.validateUserAndTeam(id, supabaseUserId);
 
@@ -514,14 +517,14 @@ export class TeamService {
     teamId: string,
     userId: string,
     supabaseUserId: string,
-    isParticipant: boolean
+    isParticipant: boolean,
   ) {
     await this.validateUserAndTeam(teamId, supabaseUserId, isParticipant);
 
     const user = await this.validateUserExists(userId);
     if (user.teamId) {
       throw new ForbiddenException(
-        `User with id '${userId}' is already a member of team with id '${user.teamId}'.`
+        `User with id '${userId}' is already a member of team with id '${user.teamId}'.`,
       );
     }
 
@@ -587,7 +590,7 @@ export class TeamService {
     teamId: string,
     userId: string,
     supabaseUserId: string,
-    isParticipant: boolean
+    isParticipant: boolean,
   ) {
     await this.validateUserAndTeam(teamId, supabaseUserId, isParticipant);
 
@@ -606,7 +609,7 @@ export class TeamService {
       case Role.PARTICIPANT:
         if (user.teamId !== teamId) {
           throw new ForbiddenException(
-            `User with id '${user.id}' is not a member of team with id '${teamId}'.`
+            `User with id '${user.id}' is not a member of team with id '${teamId}'.`,
           );
         }
         relationKey = "members";
@@ -622,7 +625,7 @@ export class TeamService {
 
       default:
         throw new ForbiddenException(
-          `Cannot withdraw user with role '${user.role}' from a team.`
+          `Cannot withdraw user with role '${user.role}' from a team.`,
         );
     }
 
@@ -675,13 +678,13 @@ export class TeamService {
   }
 
   private async checkTeamExists(teamId: string) {
-    const team = await this.prisma.team.findUnique({ 
+    const team = await this.prisma.team.findUnique({
       where: { id: teamId },
       include: {
         members: { select: { id: true } },
         juries: { select: { id: true } },
         mentors: { select: { id: true } },
-      }
+      },
     });
     if (!team)
       throw new NotFoundException(`Team with id '${teamId}' not found.`);
@@ -691,10 +694,10 @@ export class TeamService {
   private async validateUserAndTeam(
     teamId: string,
     supabaseUserId: string,
-    isParticipant = false
+    isParticipant = false,
   ) {
     if (isParticipant) {
-      this.validateUserRole(supabaseUserId, Role.PARTICIPANT);
+      await this.validateUserRole(supabaseUserId, Role.PARTICIPANT);
     } else {
       await this.validateUserRole(supabaseUserId, Role.ORGANIZER);
       return this.checkTeamExists(teamId);
@@ -715,7 +718,7 @@ export class TeamService {
     const subject = theme.subjects.find((s) => s.id === subjectId);
     if (!subject)
       throw new NotFoundException(
-        `Subject with id '${subjectId}' not found in theme '${themeId}'.`
+        `Subject with id '${subjectId}' not found in theme '${themeId}'.`,
       );
   }
 }

@@ -12,7 +12,7 @@ import { Role } from "@prisma/client";
 
 @Controller("submission")
 export class SubmissionController {
-  constructor(private readonly submissionService: SubmissionService) { }
+  constructor(private readonly submissionService: SubmissionService) {}
 
   @Post()
   @Roles(Role.ORGANIZER)
@@ -49,7 +49,10 @@ export class SubmissionController {
     @Body() submission: UpdateSubmissionDto,
     @SupabaseUser() supabaseUser: SupabaseDecodedUser,
   ): Promise<submissionReponseDto> {
-    return this.submissionService.updateSubmission(submission, supabaseUser.sub);
+    return this.submissionService.updateSubmission(
+      submission,
+      supabaseUser.sub,
+    );
   }
 
   @Post("evaluate")

@@ -337,22 +337,21 @@ export class UserService {
       await this.validateFavoriteSubjectIds(updateUserDto.favoriteSubjectIds);
     }
 
-    const dataToUpdate: any = {
-      ...updateUserDto,
+    const { github, discord, profilePicturePath, ...rest } = updateUserDto;
+    const dataToUpdate: Prisma.UserUpdateInput = {
+      ...rest,
     };
 
-    if (updateUserDto.github !== undefined) {
-      dataToUpdate.github =
-        updateUserDto.github === null ? Prisma.DbNull : updateUserDto.github;
+    if (github !== undefined) {
+      dataToUpdate.github = github === null ? Prisma.DbNull : github;
     }
 
-    if (updateUserDto.discord !== undefined) {
-      dataToUpdate.discord =
-        updateUserDto.discord === null ? Prisma.DbNull : updateUserDto.discord;
+    if (discord !== undefined) {
+      dataToUpdate.discord = discord === null ? Prisma.DbNull : discord;
     }
 
-    if (updateUserDto.profilePicturePath !== undefined) {
-      dataToUpdate.profilePicturePath = updateUserDto.profilePicturePath;
+    if (profilePicturePath !== undefined) {
+      dataToUpdate.profilePicturePath = profilePicturePath;
     }
 
     return await this.prisma.user.update({

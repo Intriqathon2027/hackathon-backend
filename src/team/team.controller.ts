@@ -50,13 +50,8 @@ export class TeamController {
   }
 
   @Post()
-  async create(
-    @Body() newTeamData: CreateTeamDTO,
-    @SupabaseUser() supabaseUser: SupabaseDecodedUser,
-  ) {
-    return this.handleRequest(() =>
-      this.teamService.create(newTeamData, supabaseUser.sub),
-    );
+  async create(@Body() newTeamData: CreateTeamDTO) {
+    return this.handleRequest(() => this.teamService.create(newTeamData));
   }
 
   @Post("autogenerate")
@@ -80,13 +75,9 @@ export class TeamController {
 
   @Put(":id")
   @Roles(Role.ORGANIZER)
-  async update(
-    @Param("id") id: string,
-    @Body() updateTeamData: UpdateTeamDTO,
-    @SupabaseUser() supabaseUser: SupabaseDecodedUser,
-  ) {
+  async update(@Param("id") id: string, @Body() updateTeamData: UpdateTeamDTO) {
     return this.handleRequest(() =>
-      this.teamService.update(id, updateTeamData, supabaseUser.sub),
+      this.teamService.update(id, updateTeamData),
     );
   }
 

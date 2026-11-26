@@ -31,7 +31,7 @@ interface OAuthTokenResponse {
 
 @Injectable()
 export class AuthService {
-  constructor(private readonly userService: UserService) { }
+  constructor(private readonly userService: UserService) {}
 
   // -------------------------
   // Discord OAuth2
