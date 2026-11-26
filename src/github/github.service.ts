@@ -14,6 +14,9 @@ interface GitHubData {
   accessToken?: string;
   token?: string;
   access_token?: string;
+  login?: string;
+  username?: string;
+  nickname?: string;
   [key: string]: unknown;
 }
 
@@ -32,7 +35,7 @@ export class GithubService {
   constructor(
     private prismaService: PrismaService,
     private configurationService: ConfigurationService,
-  ) {}
+  ) { }
 
   async createPrivateRepo(supabaseUserId: string): Promise<GitHubRepoResponse> {
     const user = await this.prismaService.user.findUnique({
