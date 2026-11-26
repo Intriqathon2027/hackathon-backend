@@ -33,7 +33,7 @@ export class UserService {
     private readonly prisma: PrismaService,
     private readonly mailerService: MailerService,
     private readonly S3BucketService: S3BucketService,
-  ) { }
+  ) {}
 
   async create(
     createUserDto: CreateUserDto,

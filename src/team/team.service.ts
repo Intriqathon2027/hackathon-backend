@@ -498,7 +498,7 @@ export class TeamService {
     });
 
     if (!team) throw new NotFoundException(`Team with id '${id}' not found`);
-    return team as TeamResponse;
+    return team;
   }
 
   async findAll(): Promise<TeamResponse[]> {
@@ -510,7 +510,7 @@ export class TeamService {
       },
     });
 
-    return teams as TeamResponse[];
+    return teams;
   }
 
   async assignUserToTeam(

@@ -35,7 +35,7 @@ export class GithubService {
   constructor(
     private prismaService: PrismaService,
     private configurationService: ConfigurationService,
-  ) { }
+  ) {}
 
   async createPrivateRepo(supabaseUserId: string): Promise<GitHubRepoResponse> {
     const user = await this.prismaService.user.findUnique({
